@@ -38,8 +38,14 @@ defmodule ElDiezWorldCup.Sweepstakes.ContributionServer do
 
   # --- Server ----------------------------------------------------------------
 
+  # Everyone starts pledged at £10 (1000p); players can raise/lower from there.
+  @default_pence 1000
+
   @impl true
-  def init(:ok), do: {:ok, %{}}
+  def init(:ok) do
+    pledges = Map.new(Sweepstakes.players(), fn player -> {player, @default_pence} end)
+    {:ok, pledges}
+  end
 
   @impl true
   def handle_call(:pledges, _from, pledges), do: {:reply, pledges, pledges}

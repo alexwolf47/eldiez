@@ -6,9 +6,9 @@ defmodule ElDiezWorldCup.Sweepstakes.DrawServer do
 
     * Holds the current draw state (status, schedule, revealed assignments and the
       slot currently spinning) so every viewer sees the same thing.
-    * Paces the draw: each team reveal lasts ~6.5 seconds (a ~2.5s flag spin
-      followed by a 4s lock-in so the selected team sticks), advancing Pot 1 for
-      all players, then Pot 2, and so on.
+    * Paces the draw: each team reveal is a 5s flag spin followed by a lock-in
+      so the selected team sticks (4s, doubled to 8s for the Pot 1 favourites),
+      advancing Pot 1 for all players, then Pot 2, and so on.
     * Persists every revealed assignment to the database as it happens, and the
       lifecycle/schedule/seed to the settings row, so a restart resumes cleanly.
     * Broadcasts state changes over PubSub topic `"draw"`.
@@ -24,7 +24,7 @@ defmodule ElDiezWorldCup.Sweepstakes.DrawServer do
 
   @pubsub ElDiezWorldCup.PubSub
   @topic "draw"
-  @spin_ms 2_500
+  @spin_ms 5_000
   @lock_ms 4_000
 
   # --- Client API ------------------------------------------------------------
@@ -144,7 +144,7 @@ defmodule ElDiezWorldCup.Sweepstakes.DrawServer do
     slot = Map.delete(current, :phase)
     {:ok, _} = Sweepstakes.create_assignment(slot)
 
-    timer = Process.send_after(self(), {:advance, gen}, @lock_ms)
+    timer = Process.send_after(self(), {:advance, gen}, lock_ms(current.pot))
 
     state = %{
       state
@@ -168,6 +168,11 @@ defmodule ElDiezWorldCup.Sweepstakes.DrawServer do
   def handle_info(_msg, state), do: {:noreply, state}
 
   # --- Internals -------------------------------------------------------------
+
+  # How long the selected team stays on screen before advancing. Pot 1 (the
+  # favourites) lingers twice as long for extra drama.
+  defp lock_ms(1), do: @lock_ms * 2
+  defp lock_ms(_pot), do: @lock_ms
 
   defp do_start(state) do
     seed = state.seed || :erlang.unique_integer([:positive])

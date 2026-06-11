@@ -30,7 +30,7 @@ defmodule ElDiezWorldCupWeb.DrawLive do
       |> assign(:pots, Sweepstakes.pots())
       |> assign(:awards, Sweepstakes.awards())
       |> assign(:reel_flags, @reel_flags)
-      |> assign(:selected_player, hd(Sweepstakes.players()))
+      |> assign(:selected_player, restore_player(socket))
       |> assign(:pledges, ContributionServer.pledges())
       |> apply_state(DrawServer.state())
       |> assign(:now, DateTime.utc_now())
@@ -54,18 +54,35 @@ defmodule ElDiezWorldCupWeb.DrawLive do
 
   @impl true
   def handle_event("select_player", %{"player" => player}, socket) do
-    {:noreply, assign(socket, :selected_player, player)}
+    {:noreply, select_player(socket, player)}
   end
 
   def handle_event("pledge", %{"player" => player, "amount" => amount}, socket) do
     case parse_pence(amount) do
       {:ok, pence} ->
         ContributionServer.set_pledge(player, pence)
-        {:noreply, assign(socket, :selected_player, player)}
+        {:noreply, select_player(socket, player)}
 
       :error ->
-        {:noreply, assign(socket, :selected_player, player)}
+        {:noreply, select_player(socket, player)}
     end
+  end
+
+  # Set the active player and mirror it to the browser's localStorage (handled
+  # by the `phx:store` listener in app.js) so a refresh restores the choice.
+  defp select_player(socket, player) do
+    socket
+    |> assign(:selected_player, player)
+    |> push_event("store", %{key: "selected_player", value: player})
+  end
+
+  # On a connected mount, restore the player saved in localStorage and sent back
+  # via connect params; fall back to the first player otherwise.
+  defp restore_player(socket) do
+    players = Sweepstakes.players()
+    stored = connected?(socket) && get_connect_params(socket)["selected_player"]
+
+    if stored in players, do: stored, else: hd(players)
   end
 
   # Parse a "£" text input (e.g. "10", "12.50") into whole pence.
@@ -162,7 +179,7 @@ defmodule ElDiezWorldCupWeb.DrawLive do
           total={@total}
         />
 
-        <.awards awards={@awards} />
+        <.awards awards={@awards} pledges={@pledges} players={@players} />
 
         <.contributions
           players={@players}
@@ -180,6 +197,8 @@ defmodule ElDiezWorldCupWeb.DrawLive do
         <.draw_preview
           :if={is_nil(@current) and @status in ["pending", "scheduled"]}
           pot={Map.get(@pots, 1, [])}
+          countdown={format_countdown(countdown_secs(assigns))}
+          countdown_secs={countdown_secs(assigns)}
         />
 
         <section class="grid gap-6 lg:grid-cols-2">
@@ -300,6 +319,8 @@ defmodule ElDiezWorldCupWeb.DrawLive do
   end
 
   attr :pot, :map, required: true
+  attr :countdown, :string, required: true
+  attr :countdown_secs, :integer, required: true
 
   # Pre-draw teaser: the same selector idling over Pot 1 (drawn first) so the
   # ticker is alive on the page before the draw goes live.
@@ -310,7 +331,14 @@ defmodule ElDiezWorldCupWeb.DrawLive do
         <div class="uppercase tracking-widest text-sm opacity-80">
           {pot_label(1)} · Up first
         </div>
-        <div class="text-2xl sm:text-3xl font-black">Waiting for the draw…</div>
+        <%= if @countdown_secs > 0 do %>
+          <div class="text-sm uppercase tracking-widest opacity-80">Draw starts in</div>
+          <div class="font-mono text-4xl sm:text-6xl font-black tracking-widest tabular-nums">
+            {@countdown}
+          </div>
+        <% else %>
+          <div class="text-2xl sm:text-3xl font-black">Waiting for the draw…</div>
+        <% end %>
         <.flag_ticker id="preview-ticker" flags={Enum.map(@pot, & &1.flag)} />
         <div class="text-lg opacity-80">Warming up…</div>
         <.remaining_pool remaining={@pot} />
@@ -410,8 +438,17 @@ defmodule ElDiezWorldCupWeb.DrawLive do
   end
 
   attr :awards, :list, required: true
+  attr :pledges, :map, required: true
+  attr :players, :list, required: true
 
   defp awards(assigns) do
+    # Pot is built from everyone's agreed stake (the lowest pledge on the board);
+    # each award/penalty is that percentage of it, in real money.
+    pledged = Map.values(assigns.pledges)
+    lowest = (pledged != [] && Enum.min(pledged)) || nil
+    pot = (lowest && lowest * length(assigns.players)) || nil
+    assigns = assign(assigns, :pot, pot)
+
     ~H"""
     <section class="card bg-base-100 shadow-md">
       <div class="card-body">
@@ -432,12 +469,24 @@ defmodule ElDiezWorldCupWeb.DrawLive do
             ]}>
               {format_pct(award.pct)}
             </div>
+            <div
+              :if={@pot}
+              class={[
+                "text-lg font-bold tabular-nums",
+                award.pct < 0 && "text-error/80",
+                award.pct >= 0 && "text-base-content/80"
+              ]}
+            >
+              {format_signed_pence(round(award.pct * @pot / 100))}
+            </div>
             <div class="font-semibold">{award.title}</div>
             <div class="text-sm text-base-content/60">{award.desc}</div>
           </div>
         </div>
         <p class="text-xs text-base-content/50 pt-1">
-          Wooden-spoon penalties: the offending player pays an extra 10% into the pot.
+          Amounts based on a {(@pot && format_pence(@pot)) || "—"} pot ({(@pot &&
+            format_pence(div(@pot, length(@players)))) || "—"} per player). Wooden-spoon penalties
+          are paid into the pot on top of the offender's stake.
         </p>
       </div>
     </section>
@@ -447,6 +496,10 @@ defmodule ElDiezWorldCupWeb.DrawLive do
   # "80%" for prizes, "−10%" for penalties (true minus sign, not a hyphen).
   defp format_pct(pct) when pct < 0, do: "−#{abs(pct)}%"
   defp format_pct(pct), do: "#{pct}%"
+
+  # "£25" for prizes, "−£10" for penalties (true minus sign, not a hyphen).
+  defp format_signed_pence(pence) when pence < 0, do: "−" <> format_pence(abs(pence))
+  defp format_signed_pence(pence), do: format_pence(pence)
 
   attr :players, :list, required: true
   attr :pledges, :map, required: true

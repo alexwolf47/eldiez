@@ -28,8 +28,20 @@ import topbar from "../vendor/topbar"
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  params: {_csrf_token: csrfToken},
+  params: {
+    _csrf_token: csrfToken,
+    // Restore the player chosen on a previous visit (see phx:store below).
+    selected_player: localStorage.getItem("selected_player"),
+  },
   hooks: {...colocatedHooks},
+})
+
+// Persist small bits of UI state pushed from the server into localStorage so
+// they survive a page refresh.
+window.addEventListener("phx:store", e => {
+  if (e.detail && e.detail.key) {
+    localStorage.setItem(e.detail.key, e.detail.value)
+  }
 })
 
 // Show progress bar on live navigation and form submits

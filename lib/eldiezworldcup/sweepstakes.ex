@@ -16,15 +16,15 @@ defmodule ElDiezWorldCup.Sweepstakes do
 
   @players [
     "Alex",
-    "Andrew Smith",
-    "Dan Cowen",
-    "Greg Luetchford",
-    "Joe O'Gorman",
-    "John Campbell",
-    "Jonny Kingsley",
-    "Jonny Warburton",
-    "Josh Richards",
-    "Paul Mabey"
+    "Andrew",
+    "Dan",
+    "Greg",
+    "Joe",
+    "John",
+    "Jonny K",
+    "Jonny W",
+    "Josh",
+    "Paul"
   ]
 
   # {name, odds, flag} ordered by best available outright price (favourites first).
@@ -75,7 +75,11 @@ defmodule ElDiezWorldCup.Sweepstakes do
   @pot_count 4
 
   @awards [
-    %{pct: 80, title: "Outright Winner", desc: "Player whose team lifts the World Cup."},
+    %{
+      pct: 100,
+      title: "Outright Winner",
+      desc: "Player whose team lifts the World Cup (includes the +20% from the group vote)."
+    },
     %{pct: 25, title: "Top Goalscorer", desc: "Player holding the team of the tournament's top scorer."},
     %{
       pct: 25,
@@ -92,6 +96,11 @@ defmodule ElDiezWorldCup.Sweepstakes do
       pct: -10,
       title: "Fewest Goals Scored",
       desc: "Player whose team scores the fewest goals."
+    },
+    %{
+      pct: -20,
+      title: "Best/Worst Foul",
+      desc: "Voted by the group after the World Cup — the 20% goes straight to the Outright Winner."
     }
   ]
 

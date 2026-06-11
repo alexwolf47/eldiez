@@ -1,0 +1,29 @@
+databases:
+  - name: eldiezworldcup-db
+    region: frankfurt
+    plan: basic-256mb
+    diskSizeGB: 1
+
+services:
+  - type: web
+    name: eldiezworldcup
+    region: frankfurt
+    plan: starter
+    runtime: elixir
+    healthCheckPath: /healthz
+    buildCommand: mix deps.get --only prod && mix compile && mix assets.deploy && mix release
+    preDeployCommand: _build/prod/rel/eldiezworldcup/bin/migrate
+    startCommand: _build/prod/rel/eldiezworldcup/bin/server
+    envVars:
+      - key: MIX_ENV
+        value: prod
+      - key: PHX_SERVER
+        value: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: eldiezworldcup-db
+          property: connectionString
+      - key: SECRET_KEY_BASE
+        sync: false
+      - key: PHX_HOST
+        sync: false
